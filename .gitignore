@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+venv/
+ht-monitoring-backend/
+
+go-backend/go-build*
+
+go-backend/uploads/*
+python-sst/web_input.wav
+!go-backend/uploads/.gitkeep
+
+.DS_Store
+Thumbs.db

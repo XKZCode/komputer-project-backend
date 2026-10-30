@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>HT Emergency Monitoring - Tester Panel</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #121212; color: #fff; }
+        .card { background-color: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        button { padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px; }
+        .btn-on { background-color: #28a745; color: white; }
+        .btn-off { background-color: #dc3545; color: white; }
+        .btn-rekam { background-color: #007bff; color: white; }
+        .btn-refresh { background-color: #17a2b8; color: white; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+        th { background-color: #2a2a2a; }
+        .ekstrem { color: #ff4d4d; font-weight: bold; }
+        .tinggi { color: #ff9900; font-weight: bold; }
+        .aman { color: #28a745; font-weight: bold; }
+        #status-msg { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<h2>HT Emergency Monitoring - Tester Panel (Dockerized)</h2>
+
+<div class="card">
+    <h3>1. Kontrol Monitoring & Perekaman</h3>
+    <p>Status System: <span id="sys-status" style="color: #dc3545; font-weight: bold;">OFF</span></p>
+    <button class="btn-on" onclick="setStatus(true)">Nyalakan System (ON)</button>
+    <button class="btn-off" onclick="setStatus(false)">Matikan System (OFF)</button>
+    <button id="btn-record" class="btn-rekam" onclick="startRecording()" disabled>Mulai Rekam Suara (5 Detik)</button>
+    <div id="status-msg"></div>
+</div>
+
+<div class="card">
+    <h3>2. Daftar Insiden Terdeteksi</h3>
+    <button class="btn-refresh" onclick="fetchIncidents()">Refresh Data</button>
+    <table>
+        <thead>
+            <tr>
+                <th>Waktu</th>
+                <th>Transkrip Suara</th>
+                <th>Tingkat Bahaya</th>
+                <th>Kata Kunci</th>
+                <th>Lokasi GPS</th>
+                <th>Status Review</th>
+            </tr>
+        </thead>
+        <tbody id="incidents-body">
+            <tr><td colspan="6">Memuat data...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    let isSystemOn = false;
+    let mediaRecorder;
+    let audioChunks = [];
+
+    function setStatus(on) {
+        isSystemOn = on;
+        const statusEl = document.getElementById('sys-status');
+        const btnRecord = document.getElementById('btn-record');
+        
+        if (on) {
+            statusEl.innerText = "ON (Siap Merekam)";
+            statusEl.style.color = "#28a745";
+            btnRecord.disabled = false;
+        } else {
+            statusEl.innerText = "OFF";
+            statusEl.style.color = "#dc3545";
+            btnRecord.disabled = true;
+        }
+    }
+
+    async function startRecording() {
+        if (!isSystemOn) return;
+
+        const msg = document.getElementById('status-msg');
+        msg.style.color = "#ffc107";
+        msg.innerText = "Merekam suara selama 5 detik... Silakan bicara!";
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+            
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                await sendAudioToGoBackend(audioBlob);
+            };
+
+            mediaRecorder.start();
+            setTimeout(() => mediaRecorder.stop(), 5000);
+
+        } catch (err) {
+            msg.style.color = "#dc3545";
+            msg.innerText = "Gagal mengakses microphone laptop!";
+        }
+    }
+
+    async function sendAudioToGoBackend(blob) {
+        const msg = document.getElementById('status-msg');
+        msg.style.color = "#17a2b8";
+        msg.innerText = "Mengirim audio ke Go Backend...";
+
+        const formData = new FormData();
+        formData.append("audio", blob, "recorded_ht.wav");
+        formData.append("latitude", "-6.917464");
+        formData.append("longitude", "107.619123");
+
+        try {
+            // Menembak langsung ke Go Backend Port 8080
+            const response = await fetch("http://localhost:8080/api/audio/upload", {
+                method: "POST",
+                body: formData
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                msg.style.color = "#28a745";
+                msg.innerText = "Selesai merekam & sukses diproses oleh Go & Python Whisper!";
+                fetchIncidents();
+            } else {
+                throw new Error("Server error");
+            }
+        } catch (err) {
+            msg.style.color = "#dc3545";
+            msg.innerText = "Gagal mengirim ke Go Backend (Port 8080). Pastikan Docker berjalan!";
+        }
+    }
+
+    async function fetchIncidents() {
+        try {
+            const res = await fetch("http://localhost:8080/api/incidents");
+            const result = await res.json();
+            const tbody = document.getElementById('incidents-body');
+            tbody.innerHTML = "";
+
+            const list = result.data || result;
+
+            if (!list || list.length === 0) {
+                tbody.innerHTML = "<tr><td colspan='6'>Belum ada data insiden.</td></tr>";
+                return;
+            }
+
+            list.forEach(item => {
+                let threatClass = "aman";
+                if (item.threat_level === "Ekstrem") threatClass = "ekstrem";
+                else if (item.threat_level === "Tinggi") threatClass = "tinggi";
+
+                const dateFormatted = new Date(item.created_at).toLocaleString('id-ID');
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${dateFormatted}</td>
+                        <td>${item.transcript_text}</td>
+                        <td class="${threatClass}">${item.threat_level}</td>
+                        <td>${item.keywords_detected}</td>
+                        <td>${item.latitude}, ${item.longitude}</td>
+                        <td>${item.review_status}</td>
+                    </tr>
+                `;
+            });
+        } catch (err) {
+            console.error("Gagal mengambil riwayat:", err);
+        }
+    }
+
+    // Auto load data saat awal dibuka
+    fetchIncidents();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  #Database MySQL Container
+  db:
+    image: mysql:8.0
+    container_name: ht_mysql_db
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: ht_monitoring_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+
+  #Python STT Service (FastAPI + Whisper)
+  python-stt:
+    build: ./python-sst
+    container_name: ht_python_stt
+    restart: always
+    ports:
+      - "8000:8000"
+
+  #Go Backend Service
+  go-backend:
+    build: ./go-backend
+    container_name: ht_go_backend
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+      - python-stt
+
+volumes:
+  mysql_data:
