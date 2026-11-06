@@ -68,13 +68,13 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	router.StaticFile("/tester", "./tester.html")
+	router.StaticFile("/tester", "tester.html")
 
 	// Endpoints API
 	router.POST("/api/audio/upload", uploadAudioHandler)
-	router.GET("/api/incidents", getIncidentsHandler)            // Sudah mendukung Filter Query
+	router.GET("/api/incidents", getIncidentsHandler) // Sudah mendukung Filter Query
 	router.PATCH("/api/incidents/:id/status", updateStatusHandler)
-	router.GET("/api/incidents/export", exportCSVHandler)        // FITUR BARU: Ekspor CSV
+	router.GET("/api/incidents/export", exportCSVHandler) // FITUR BARU: Ekspor CSV
 
 	fmt.Println("Server Go Backend berjalan di port 8080...")
 	router.Run(":8080")
